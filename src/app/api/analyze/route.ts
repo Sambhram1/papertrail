@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
-import { analyzeWithModel } from "@/lib/analysis/client";
 import { buildFallbackAnalysis } from "@/lib/analysis/fallback";
 import { normalizeSubmission } from "@/lib/analysis/normalize";
-import { buildAnalysisPrompt } from "@/lib/analysis/prompt";
-import { repairAnalysisResult } from "@/lib/analysis/repair";
 import { SUPABASE_ANALYSES_TABLE, SUPABASE_UPLOADS_BUCKET } from "@/lib/supabase/config";
 import { fetchSafeExternal } from "@/lib/security/external-url";
 import { toAnalysisRow } from "@/lib/supabase/analyses";
@@ -36,15 +33,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const prompt = buildAnalysisPrompt(normalized);
-    const rawResult = await analyzeWithModel({
-      imageDataUrl: normalized.imageDataUrl,
-      prompt
-    });
-
-    const analysis = rawResult
-      ? repairAnalysisResult(rawResult, normalized)
-      : buildFallbackAnalysis(normalized);
+    const analysis = buildFallbackAnalysis(normalized);
 
     const sourceFile = await uploadSourceFile({
       analysisId: analysis.id,

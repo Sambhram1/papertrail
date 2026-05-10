@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
+import type { AnalyzeInput } from "@/lib/types";
 
 type CaptureKind = "image" | "pdf" | "text" | "calendar" | "link";
 
@@ -67,14 +68,7 @@ export function IntakePanel({
   draftText: string;
   error: string;
   isBusy: boolean;
-  onAnalyze: (options: {
-    text?: string;
-    file?: File | null;
-    sourceNote?: string;
-    sourceUrl?: string;
-    sourceTitle?: string;
-    sourceThumbnailUrl?: string;
-  }) => Promise<void>;
+  onAnalyze: (options: AnalyzeInput) => Promise<void>;
   onDraftChange: (value: string) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -84,6 +78,8 @@ export function IntakePanel({
   const [linkUrl, setLinkUrl] = useState("");
   const [linkPreview, setLinkPreview] = useState<LinkPreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [lastPreviewUrl, setLastPreviewUrl] = useState("");
+  const [previewSourceUrl, setPreviewSourceUrl] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const activeOption = captureOptions.find((option) => option.id === activeKind) ?? captureOptions[0];
@@ -107,6 +103,8 @@ export function IntakePanel({
     setFile(null);
     setFilePreviewUrl("");
     setLinkPreview(null);
+    setPreviewSourceUrl("");
+    setLastPreviewUrl("");
     onDraftChange("");
     setLinkUrl("");
   }
@@ -125,24 +123,99 @@ export function IntakePanel({
     setSelectedFile(event.dataTransfer.files?.[0] ?? null);
   }
 
-  async function loadLinkPreview() {
-    if (!linkUrl.trim()) {
+  async function loadLinkPreviewForUrl(rawUrl: string) {
+    const trimmedUrl = rawUrl.trim();
+
+    if (!trimmedUrl) {
       return;
     }
 
+    setLastPreviewUrl(trimmedUrl);
     setPreviewBusy(true);
 
     try {
       const response = await fetch("/api/link-preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: linkUrl.trim() })
+        body: JSON.stringify({ url: trimmedUrl })
       });
       const data = (await response.json()) as LinkPreview;
       setLinkPreview(response.ok ? data : null);
+      setPreviewSourceUrl(trimmedUrl);
     } finally {
       setPreviewBusy(false);
     }
+  }
+
+  function isPreviewableUrl(value: string) {
+    try {
+      const parsed = new URL(value.trim());
+      return /^https?:$/i.test(parsed.protocol);
+    } catch {
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (activeKind !== "link") {
+      return;
+    }
+
+    const trimmedUrl = linkUrl.trim();
+
+    if (!trimmedUrl) {
+      setLinkPreview(null);
+      setPreviewSourceUrl("");
+      return;
+    }
+
+    if (!isPreviewableUrl(trimmedUrl)) {
+      setLinkPreview(null);
+      setPreviewSourceUrl("");
+      return;
+    }
+
+    if (previewSourceUrl && previewSourceUrl !== trimmedUrl) {
+      setLinkPreview(null);
+      setPreviewSourceUrl("");
+    }
+
+    if (trimmedUrl === lastPreviewUrl) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      void loadLinkPreviewForUrl(trimmedUrl);
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [activeKind, lastPreviewUrl, linkUrl, previewSourceUrl]);
+
+  function buildAnalyzePayload(): AnalyzeInput {
+    if (usesUpload) {
+      return {
+        file,
+        sourceNote
+      };
+    }
+
+    if (usesLink) {
+      const trimmedUrl = linkUrl.trim();
+      const trimmedNote = sourceNote.trim();
+
+      return {
+        text: trimmedNote ? `${trimmedUrl}\n\n${trimmedNote}` : trimmedUrl,
+        sourceNote,
+        sourceUrl: trimmedUrl,
+        sourceTitle: linkPreview?.title,
+        sourceThumbnailUrl: linkPreview?.thumbnailUrl
+      };
+    }
+
+    return {
+      text: draftText,
+      sourceNote
+    };
   }
 
   return (
@@ -229,7 +302,7 @@ export function IntakePanel({
                   />
                   <button
                     type="button"
-                    onClick={() => void loadLinkPreview()}
+                    onClick={() => void loadLinkPreviewForUrl(linkUrl)}
                     className="mono-button px-4 py-4 text-xs uppercase"
                   >
                     {previewBusy ? "Loading" : "Preview"}
@@ -267,16 +340,7 @@ export function IntakePanel({
           <button
             type="button"
             disabled={!canAnalyze || isBusy}
-            onClick={() =>
-              void onAnalyze({
-                file: usesUpload ? file : null,
-                text: usesUpload ? sourceNote : usesLink ? `${linkUrl}\n\n${sourceNote}` : draftText,
-                sourceNote,
-                sourceUrl: usesLink ? linkUrl : undefined,
-                sourceTitle: linkPreview?.title,
-                sourceThumbnailUrl: linkPreview?.thumbnailUrl
-              })
-            }
+            onClick={() => void onAnalyze(buildAnalyzePayload())}
             className="mono-button min-h-28 p-4 text-left disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span className="display-title block text-3xl leading-none">

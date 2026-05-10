@@ -59,3 +59,12 @@ export type NormalizedSubmission = {
   normalizedText: string;
   sourcePreview: string;
 };
+
+export type AnalyzeInput = {
+  text?: string;
+  file?: File | null;
+  sourceNote?: string;
+  sourceUrl?: string;
+  sourceTitle?: string;
+  sourceThumbnailUrl?: string;
+};

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { ActivityFeed } from "@/components/papertrail/activity-feed";
 import { IntakePanel } from "@/components/papertrail/intake-panel";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
-import type { AnalysisResult } from "@/lib/types";
+import type { AnalysisResult, AnalyzeInput } from "@/lib/types";
 
 export default function HomePage() {
   const [draftText, setDraftText] = useState("");
@@ -52,14 +52,7 @@ export default function HomePage() {
     setHistory(data.analyses ?? []);
   }
 
-  async function handleAnalyze(options: {
-    text?: string;
-    file?: File | null;
-    sourceNote?: string;
-    sourceUrl?: string;
-    sourceTitle?: string;
-    sourceThumbnailUrl?: string;
-  }) {
+  async function handleAnalyze(options: AnalyzeInput) {
     setError("");
     setIsBusy(true);
 
