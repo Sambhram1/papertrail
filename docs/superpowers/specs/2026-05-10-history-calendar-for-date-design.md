@@ -37,9 +37,9 @@ Add a history side panel with a date picker and mini intake so users can save up
 
 - Add a toggle above the timeline:
   - "Saved by day" (group by `createdAt`).
-  - "For date" (group by `forDate`, fallback to `createdAt` if missing).
+  - "For date" (group by `forDate`; items without `forDate` appear in a "No date" group).
 - Selected date in the side panel scrolls/jumps to the matching group in the current mode.
-- If no group exists for the selected date, show a subtle inline note in the side panel: "No items for this date yet." The note clears on date/mode changes or after a successful save/data refresh for that date.
+- If no group exists for the selected date, show a subtle inline note in the side panel: "No items for this date yet." The note appears only after an explicit date change or mode toggle (never on initial load) and clears on date/mode changes or after a successful save/data refresh for that date.
 
 ### Card labeling
 
@@ -75,13 +75,15 @@ Add a history side panel with a date picker and mini intake so users can save up
   - Date picker state.
   - Compact intake (reuse `IntakePanel` in compact mode or create `MiniIntakePanel`).
   - Navigation button to full capture.
+  - Passes `forDate` to the intake flow as a string in `YYYY-MM-DD` format.
 
 ### ActivityFeed
 
 - Extend grouping function to accept a `mode`:
   - `saved`: group by `createdAt`
-  - `forDate`: group by `forDate ?? createdAt`
+  - `forDate`: group by `forDate` and isolate untagged items into a "No date" group
 - Provide a stable `dateKey` (ISO `YYYY-MM-DD`) to create anchors for jump/scroll.
+- Normalize keys via a single helper: `toDateKey(value)` which returns `YYYY-MM-DD` for timestamps (local date) and passes through valid `forDate` strings.
 
 ## Behavior Details
 
@@ -95,7 +97,7 @@ Add a history side panel with a date picker and mini intake so users can save up
 
 ## Error Handling
 
-- If `forDate` is malformed, ignore it and fallback to `createdAt` for grouping.
+- If `forDate` is malformed, treat it as `null` (so it appears in the "No date" group in `forDate` mode).
 - If the timeline anchor is not found, do not auto-scroll; show the "No items for this date yet" note.
 
 ## Testing
@@ -116,13 +118,18 @@ Add a history side panel with a date picker and mini intake so users can save up
 ## Ordering Rules
 
 - "Saved by day": groups sorted by `createdAt` descending; items sorted by `createdAt` descending.
-- "For date": groups sorted by `forDate` descending (fallback to `createdAt` date when `forDate` is null); items sorted by `createdAt` descending.
+- "For date": groups sorted by `forDate` descending; the "No date" group appears last; items sorted by `createdAt` descending.
 
 ## Validation Rules
 
 - `forDate` must match `YYYY-MM-DD` and represent a valid calendar date.
 - Server validation uses a strict date check (year, month, day) without timezone conversion.
 - Persist `forDate` as the raw `YYYY-MM-DD` string; do not serialize via `Date` to avoid off-by-one shifts.
+
+## Data Contract
+
+- Intake components pass `forDate` as a `string | undefined` prop to the analyze handler.
+- `/api/analyze` expects the `FormData` key `forDate` (string `YYYY-MM-DD`).
 
 ## Rollout Notes
 
