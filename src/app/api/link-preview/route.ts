@@ -1,38 +1,52 @@
 import { NextResponse } from "next/server";
+import { fetchSafeExternal } from "@/lib/security/external-url";
+import { requireSupabaseUser } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const { url } = (await request.json()) as { url?: string };
+  const { user } = await requireSupabaseUser(request);
 
-  if (!url || !/^https?:\/\//i.test(url)) {
-    return NextResponse.json({ error: "Enter a valid URL." }, { status: 400 });
+  if (!user) {
+    return NextResponse.json({ error: "Sign in to preview links." }, { status: 401 });
   }
 
+  const { url } = (await request.json()) as { url?: string };
+  const rawUrl = url ?? "";
+
   try {
-    const controller = new AbortController();
-    const timeout = windowlessTimeout(() => controller.abort(), 6000);
-    const response = await fetch(url, {
-      signal: controller.signal,
+    const response = await fetchSafeExternal(rawUrl, {
       headers: {
         "user-agent": "PaperTrail link preview bot"
       }
+    }, {
+      timeoutMs: 6000
     });
-    clearTimeout(timeout);
+
+    const contentType = response.headers.get("content-type") || "";
+
+    if (!/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+      return NextResponse.json({
+        title: url,
+        description: "",
+        thumbnailUrl: "",
+        siteName: new URL(rawUrl).hostname
+      });
+    }
 
     const html = await response.text();
     return NextResponse.json({
-      title: pickMeta(html, "og:title") || pickTitle(html) || url,
+      title: pickMeta(html, "og:title") || pickTitle(html) || rawUrl,
       description: pickMeta(html, "og:description") || "",
       thumbnailUrl: pickMeta(html, "og:image") || pickMeta(html, "twitter:image") || "",
-      siteName: pickMeta(html, "og:site_name") || new URL(url).hostname
+      siteName: pickMeta(html, "og:site_name") || new URL(rawUrl).hostname
     });
   } catch {
     return NextResponse.json({
-      title: url,
+      title: rawUrl,
       description: "",
       thumbnailUrl: "",
-      siteName: new URL(url).hostname
+      siteName: new URL(rawUrl).hostname
     });
   }
 }
@@ -67,8 +81,4 @@ function decodeEntities(value: string) {
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
-}
-
-function windowlessTimeout(callback: () => void, ms: number) {
-  return setTimeout(callback, ms);
 }

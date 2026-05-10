@@ -5,11 +5,14 @@ import { normalizeSubmission } from "@/lib/analysis/normalize";
 import { buildAnalysisPrompt } from "@/lib/analysis/prompt";
 import { repairAnalysisResult } from "@/lib/analysis/repair";
 import { SUPABASE_ANALYSES_TABLE, SUPABASE_UPLOADS_BUCKET } from "@/lib/supabase/config";
+import { fetchSafeExternal } from "@/lib/security/external-url";
 import { toAnalysisRow } from "@/lib/supabase/analyses";
 import { requireSupabaseUser } from "@/lib/supabase/server";
 import type { AnalysisResult, StoredSourceFile } from "@/lib/types";
 
 export const runtime = "nodejs";
+const THUMBNAIL_FETCH_TIMEOUT_MS = 2500;
+const SIGNED_URL_TIMEOUT_MS = 1500;
 
 export async function POST(request: Request) {
   try {
@@ -49,21 +52,16 @@ export async function POST(request: Request) {
       supabase,
       userId: user.id
     });
-    const sourceThumbnailFile = await uploadRemoteThumbnail({
-      analysisId: analysis.id,
-      sourceThumbnailUrl,
-      supabase,
-      userId: user.id
-    });
     const savedAnalysis: AnalysisResult = {
       ...analysis,
+      title: sourceNote || sourceTitle || analysis.title,
       sourceFile,
       sourceKind: normalized.sourceKind,
       sourceNote,
       sourceUrl,
       sourceTitle,
-      sourceThumbnailUrl: sourceThumbnailFile?.url ?? sourceThumbnailUrl,
-      sourceThumbnailFile
+      sourceThumbnailUrl,
+      sourceThumbnailFile: null
     };
 
     const saveResult = await insertAnalysisRow({
@@ -80,9 +78,9 @@ export async function POST(request: Request) {
           error: `PaperTrail analyzed this item but could not save it: ${saveResult.error}`,
           saveDebug: {
             hasSourceFile: Boolean(sourceFile),
-            hasThumbnailFile: Boolean(sourceThumbnailFile),
+            hasThumbnailFile: false,
             sourceFilePath: sourceFile?.path ?? null,
-            sourceThumbnailPath: sourceThumbnailFile?.path ?? null,
+            sourceThumbnailPath: null,
             retriedWithoutNewThumbnailColumns: saveResult.retriedWithoutNewThumbnailColumns
           }
         },
@@ -90,7 +88,30 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json(savedAnalysis);
+    const sourceThumbnailFile = await uploadRemoteThumbnail({
+      analysisId: analysis.id,
+      sourceThumbnailUrl,
+      supabase,
+      userId: user.id
+    });
+    const analysisWithOptionalThumbnail: AnalysisResult = sourceThumbnailFile
+      ? {
+          ...savedAnalysis,
+          sourceThumbnailUrl: sourceThumbnailFile.url,
+          sourceThumbnailFile
+        }
+      : savedAnalysis;
+
+    if (sourceThumbnailFile) {
+      await updateThumbnailMetadata({
+        analysisId: analysis.id,
+        sourceThumbnailFile,
+        supabase,
+        userId: user.id
+      });
+    }
+
+    return NextResponse.json(analysisWithOptionalThumbnail);
   } catch (caughtError) {
     return NextResponse.json(
       {
@@ -124,22 +145,39 @@ async function insertAnalysisRow({
     return { error: null as string | null, retriedWithoutNewThumbnailColumns: false };
   }
 
-  if (!/source_thumbnail_file_/i.test(error.message)) {
-    return { error: error.message, retriedWithoutNewThumbnailColumns: false };
+  const retry = await supabase
+    .from(SUPABASE_ANALYSES_TABLE)
+    .insert(buildMinimalAnalysisRow(analysis, userId));
+
+  if (!retry.error) {
+    return {
+      error: null as string | null,
+      retriedWithoutNewThumbnailColumns: true
+    };
   }
 
-  const compatibleRow: Record<string, unknown> = { ...row };
-  delete compatibleRow.source_thumbnail_file_path;
-  delete compatibleRow.source_thumbnail_file_url;
-  delete compatibleRow.source_thumbnail_file_name;
-  delete compatibleRow.source_thumbnail_file_type;
-  delete compatibleRow.source_thumbnail_file_size;
-
-  const retry = await supabase.from(SUPABASE_ANALYSES_TABLE).insert(compatibleRow);
-
   return {
-    error: retry.error?.message ?? null,
+    error: retry.error.message,
     retriedWithoutNewThumbnailColumns: true
+  };
+}
+
+function buildMinimalAnalysisRow(analysis: AnalysisResult, userId: string) {
+  return {
+    id: analysis.id,
+    user_id: userId,
+    created_at: analysis.createdAt,
+    title: analysis.title,
+    document_type: analysis.documentType,
+    one_line_summary: analysis.oneLineSummary,
+    plain_english_explanation: analysis.plainEnglishExplanation,
+    deadlines: analysis.deadlines,
+    actions: analysis.actions,
+    risk_level: analysis.riskLevel,
+    risks: analysis.risks,
+    suggested_reply: analysis.suggestedReply,
+    entities: analysis.entities,
+    source_preview: analysis.sourcePreview
   };
 }
 
@@ -198,10 +236,12 @@ async function uploadRemoteThumbnail({
   }
 
   try {
-    const response = await fetch(sourceThumbnailUrl, {
+    const response = await fetchSafeExternal(sourceThumbnailUrl, {
       headers: {
         "user-agent": "PaperTrail thumbnail saver"
       }
+    }, {
+      timeoutMs: THUMBNAIL_FETCH_TIMEOUT_MS
     });
 
     if (!response.ok) {
@@ -244,9 +284,52 @@ async function createSignedFileUrl(
   supabase: NonNullable<Awaited<ReturnType<typeof requireSupabaseUser>>["supabase"]>,
   path: string
 ) {
-  const { data } = await supabase.storage
-    .from(SUPABASE_UPLOADS_BUCKET)
-    .createSignedUrl(path, 60 * 60);
+  try {
+    const signedUrlResult = await withTimeout(
+      supabase.storage.from(SUPABASE_UPLOADS_BUCKET).createSignedUrl(path, 60 * 60),
+      SIGNED_URL_TIMEOUT_MS
+    );
 
-  return data?.signedUrl ?? null;
+    return signedUrlResult.data?.signedUrl ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function updateThumbnailMetadata({
+  analysisId,
+  sourceThumbnailFile,
+  supabase,
+  userId
+}: {
+  analysisId: string;
+  sourceThumbnailFile: StoredSourceFile;
+  supabase: NonNullable<Awaited<ReturnType<typeof requireSupabaseUser>>["supabase"]>;
+  userId: string;
+}) {
+  try {
+    await supabase
+      .from(SUPABASE_ANALYSES_TABLE)
+      .update({
+        source_thumbnail_url: sourceThumbnailFile.url,
+        source_thumbnail_file_path: sourceThumbnailFile.path,
+        source_thumbnail_file_url: sourceThumbnailFile.url,
+        source_thumbnail_file_name: sourceThumbnailFile.name,
+        source_thumbnail_file_type: sourceThumbnailFile.type,
+        source_thumbnail_file_size: sourceThumbnailFile.size
+      })
+      .eq("id", analysisId)
+      .eq("user_id", userId);
+  } catch {
+    // Best effort: the save already succeeded, so thumbnail metadata persistence must not fail it.
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  return await Promise.race<T>([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error("Timed out.")), timeoutMs);
+    })
+  ]);
 }

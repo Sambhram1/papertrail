@@ -7,10 +7,10 @@ export function ResultHeader({ analysis }: { analysis: AnalysisResult }) {
       <div className="surface p-5">
         <p className="text-xs uppercase text-[var(--muted)]">{analysis.documentType}</p>
         <h1 className="display-title mt-5 max-w-5xl text-5xl leading-none text-[var(--paper)] sm:text-7xl">
-          {analysis.sourceNote || analysis.sourceTitle || analysis.title}
+          {analysis.title}
         </h1>
         <p className="mt-5 max-w-3xl text-base leading-7 text-[var(--paper-2)]">
-          {analysis.sourceNote || analysis.oneLineSummary}
+          {analysis.oneLineSummary}
         </p>
       </div>
 

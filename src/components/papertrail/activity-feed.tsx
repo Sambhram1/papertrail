@@ -69,7 +69,7 @@ export function ActivityFeed({
                       <ActivityPreview item={item} />
                       <div className="min-w-0">
                         <h3 className="mt-2 text-base leading-6 text-[var(--paper)]">
-                          {item.sourceNote || item.sourceTitle || item.title}
+                          {item.title}
                         </h3>
                       </div>
                     </div>

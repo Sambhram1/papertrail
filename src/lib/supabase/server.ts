@@ -3,13 +3,12 @@ import { getSupabaseBrowserConfig } from "./config";
 
 export function getSupabaseServerClient(accessToken?: string) {
   const { url, anonKey } = getSupabaseBrowserConfig();
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !anonKey) {
     return null;
   }
 
-  return createClient(url, serviceRoleKey || anonKey, {
+  return createClient(url, anonKey, {
     global: accessToken
       ? {
           headers: {
