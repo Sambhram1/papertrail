@@ -24,7 +24,7 @@ Add a history side panel with a date picker and mini intake so users can save up
 
 - Keep the existing timeline in the main column.
 - Add a right-side panel containing:
-  - A date picker labeled "For date".
+  - A date picker labeled "For date" when in `forDate` mode, and "Jump to date" when in `saved` mode.
   - A compact intake flow (image/PDF upload + link/text paste) for quick saves.
   - A button to open the full Capture intake (routes to `/?forDate=YYYY-MM-DD#capture`).
 
@@ -84,6 +84,8 @@ Add a history side panel with a date picker and mini intake so users can save up
   - `forDate`: group by `forDate` and isolate untagged items into a "No date" group
 - Provide a stable `dateKey` (ISO `YYYY-MM-DD`) to create anchors for jump/scroll.
 - Normalize keys via a single helper: `toDateKey(value)` which returns `YYYY-MM-DD` for timestamps (local date) and passes through valid `forDate` strings.
+- Anchor id schema: `day-YYYY-MM-DD` on each group container. The "No date" group uses `day-none` and is not a jump target.
+- Add `scroll-margin-top` to group containers to account for the sticky header.
 
 ## Behavior Details
 
@@ -94,6 +96,7 @@ Add a history side panel with a date picker and mini intake so users can save up
 - Jump behavior: on explicit date changes or mode toggles, but never on initial page load.
 - Jump behavior uses `scrollIntoView({ behavior: 'smooth' })` on the group anchor.
 - Capture page deep-link: when `forDate` is present on `/?forDate=YYYY-MM-DD#capture`, parse + validate it and prefill the intake date; the value is sent to `/api/analyze` as `forDate`. If invalid or missing, ignore it and proceed without `forDate`.
+- After a successful side-panel save, optimistically insert the returned analysis into the history list and re-run grouping (no full reload). This also clears the "No items" note when applicable.
 
 ## Error Handling
 
