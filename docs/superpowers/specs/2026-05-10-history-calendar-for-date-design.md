@@ -25,7 +25,7 @@ Add a history side panel with a date picker and mini intake so users can save up
 - Keep the existing timeline in the main column.
 - Add a right-side panel containing:
   - A date picker labeled "For date" (used for new saves and for jumping in `saved` mode).
-  - Helper text under the picker: "Used for new saves. In Saved by day view, it also jumps to that saved date."
+  - Helper text under the picker: "Used for new saves. It also jumps to that date in the current view."
   - A compact intake flow (image/PDF upload + link/text paste) for quick saves.
   - A button to open the full Capture intake (routes to `/?forDate=YYYY-MM-DD#capture`).
 
@@ -41,7 +41,7 @@ Add a history side panel with a date picker and mini intake so users can save up
   - "Saved by day" (group by `createdAt`).
   - "For date" (group by `forDate`; items without `forDate` appear in a "No date" group).
 - Selected date in the side panel scrolls/jumps to the matching group in the current mode.
-- If no group exists for the selected date, show a subtle inline note in the side panel: "No items for this date in your recent history." Add helper text: "Showing the latest 50 items by save date." The note appears only after an explicit date change or mode toggle (never on initial load), only after history has finished loading, and clears on date/mode changes or after a successful save/data refresh for that date.
+- If no group exists for the selected date, show a subtle inline note in the side panel: "No items for this date in your latest 50 saves." Add helper text: "Showing the latest 50 items by save date." The note appears only after an explicit date change or mode toggle (never on initial load), only after history has finished loading, and clears on date/mode changes or after a successful save/data refresh for that date.
 
 ### Card labeling
 
@@ -94,6 +94,7 @@ Add a history side panel with a date picker and mini intake so users can save up
 - Default timeline mode: "Saved by day".
 - Default selected date: today (`new Date()` normalized to `YYYY-MM-DD`).
 - Saves from the History side panel always attach the current selected `forDate`.
+- The "No date" group covers items saved without `forDate` (legacy items or saves from Capture without a `forDate` param).
 - Switching timeline modes jumps to the selected date if a matching group exists; otherwise, it leaves scroll position unchanged and shows the "No items" note.
 - Jump behavior: on explicit date changes or mode toggles, but never on initial page load.
 - Jump behavior uses `scrollIntoView({ behavior: 'smooth' })` on the group anchor and falls back to instant scroll when `prefers-reduced-motion` is set.
@@ -104,7 +105,7 @@ Add a history side panel with a date picker and mini intake so users can save up
 ## Error Handling
 
 - If `forDate` is malformed, treat it as `null` (so it appears in the "No date" group in `forDate` mode).
-- If the timeline anchor is not found, do not auto-scroll; show the "No items for this date in your recent history" note.
+- If the timeline anchor is not found, do not auto-scroll; show the "No items for this date in your latest 50 saves" note.
 
 ## Testing
 
