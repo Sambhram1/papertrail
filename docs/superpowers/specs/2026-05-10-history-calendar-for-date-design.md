@@ -39,7 +39,7 @@ Add a history side panel with a date picker and mini intake so users can save up
   - "Saved by day" (group by `createdAt`).
   - "For date" (group by `forDate`, fallback to `createdAt` if missing).
 - Selected date in the side panel scrolls/jumps to the matching group in the current mode.
-- If no group exists for the selected date, show a subtle inline note in the side panel: "No items for this date yet." The note clears on date or mode changes.
+- If no group exists for the selected date, show a subtle inline note in the side panel: "No items for this date yet." The note clears on date/mode changes or after a successful save/data refresh for that date.
 
 ### Card labeling
 
@@ -89,7 +89,7 @@ Add a history side panel with a date picker and mini intake so users can save up
 - Default selected date: today (`new Date()` normalized to `YYYY-MM-DD`).
 - Saves from the History side panel always attach the current selected `forDate`.
 - Switching timeline modes jumps to the selected date if a matching group exists; otherwise, it leaves scroll position unchanged and shows the "No items" note.
-- Jump behavior: only on explicit date changes (not on initial page load).
+- Jump behavior: on explicit date changes or mode toggles, but never on initial page load.
 - Jump behavior uses `scrollIntoView({ behavior: 'smooth' })` on the group anchor.
 - Capture page deep-link: when `forDate` is present on `/?forDate=YYYY-MM-DD#capture`, parse + validate it and prefill the intake date; the value is sent to `/api/analyze` as `forDate`. If invalid or missing, ignore it and proceed without `forDate`.
 
@@ -102,6 +102,9 @@ Add a history side panel with a date picker and mini intake so users can save up
 
 - Unit tests for grouping logic in both modes.
 - Round-trip tests for `forDate` mapping to and from Supabase rows.
+- Deep-link parsing tests for `/?forDate=YYYY-MM-DD#capture` (valid + invalid).
+- Scroll behavior tests (date change vs. mode toggle vs. initial load).
+- "No items" note lifecycle tests (clears after save/refresh).
 - UI check for the "For date" pill rendering when `forDate` is present.
 
 ## Date and Timezone Rules
@@ -119,6 +122,7 @@ Add a history side panel with a date picker and mini intake so users can save up
 
 - `forDate` must match `YYYY-MM-DD` and represent a valid calendar date.
 - Server validation uses a strict date check (year, month, day) without timezone conversion.
+- Persist `forDate` as the raw `YYYY-MM-DD` string; do not serialize via `Date` to avoid off-by-one shifts.
 
 ## Rollout Notes
 
